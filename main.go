@@ -240,7 +240,13 @@ func cmdInteractive() error {
 		return err
 	}
 	if state == nil {
-		state = make(map[string]bool)
+		if err := cmdSync(); err != nil {
+			return err
+		}
+		state, err = readShadersFile()
+		if err != nil {
+			return err
+		}
 	}
 
 	var items []string
