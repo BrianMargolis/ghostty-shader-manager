@@ -34,11 +34,12 @@ Create `~/.config/ghostty-shader-manager/ghostty-shader-manager.config.yaml`:
 shaders:
   - path: ~/.config/ghostty/shaders/bettercrt.glsl
     name: crt
+    enabled-by-default: true
   - path: ~/.config/ghostty/shaders/bloom.glsl
     name: bloom
 ```
 
-Each entry needs a `path` (tilde-expanded) and a `name` used to reference the shader in CLI commands.
+Each entry needs a `path` (tilde-expanded) and a `name` used to reference the shader in CLI commands. `enabled-by-default` controls the initial state when `sync` first adds the shader; it has no effect on subsequent syncs. Defaults to `false`.
 
 Then run `sync` once to initialize the managed file:
 

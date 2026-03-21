@@ -22,8 +22,9 @@ const (
 )
 
 type Shader struct {
-	Path string `yaml:"path"`
-	Name string `yaml:"name"`
+	Path             string `yaml:"path"`
+	Name             string `yaml:"name"`
+	EnabledByDefault bool   `yaml:"enabled-by-default"`
 }
 
 type Config struct {
@@ -127,7 +128,7 @@ func cmdSync() error {
 			newState[p] = en
 			kept++
 		} else {
-			newState[p] = false
+			newState[p] = s.EnabledByDefault
 			added++
 		}
 	}
