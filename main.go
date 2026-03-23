@@ -150,6 +150,10 @@ func cmdList() error {
 	if err != nil {
 		return err
 	}
+	state, err := readShadersFile()
+	if err != nil {
+		return err
+	}
 	maxLen := 0
 	for _, s := range cfg.Shaders {
 		if len(s.Name) > maxLen {
@@ -157,7 +161,15 @@ func cmdList() error {
 		}
 	}
 	for _, s := range cfg.Shaders {
-		fmt.Printf("%-*s  %s\n", maxLen, s.Name, s.Path)
+		var status string
+		if state == nil {
+			status = "[unsynced]"
+		} else if state[expandPath(s.Path)] {
+			status = "[on]      "
+		} else {
+			status = "[off]     "
+		}
+		fmt.Printf("%s  %-*s  %s\n", status, maxLen, s.Name, s.Path)
 	}
 	return nil
 }
