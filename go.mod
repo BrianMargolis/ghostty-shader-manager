@@ -1,4 +1,4 @@
-module ghostty-shader-manager
+module github.com/brianmargolis/ghostty-shader-manager
 
 go 1.25
 
