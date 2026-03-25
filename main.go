@@ -210,6 +210,28 @@ func findShader(cfg *Config, name string) *Shader {
 	return nil
 }
 
+func cmdTurnAllOff() error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	state, err := readShadersFile()
+	if err != nil {
+		return err
+	}
+	if state == nil {
+		return fmt.Errorf("ghostty-shaders not found — run `ghostty-shader-manager sync` first")
+	}
+	for _, s := range cfg.Shaders {
+		state[expandPath(s.Path)] = false
+	}
+	if err := writeShadersFile(cfg.Shaders, state); err != nil {
+		return err
+	}
+	fmt.Println("disabled all shaders")
+	return reloadGhostty()
+}
+
 func cmdToggle(name string, enable bool) error {
 	cfg, err := loadConfig()
 	if err != nil {
@@ -318,10 +340,12 @@ func main() {
 		err = cmdStatus()
 	case args[0] == "on" && len(args) == 2:
 		err = cmdToggle(args[1], true)
+	case args[0] == "off" && len(args) == 1:
+		err = cmdTurnAllOff()
 	case args[0] == "off" && len(args) == 2:
 		err = cmdToggle(args[1], false)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: ghostty-shader-manager [sync|list|status|on <shader>|off <shader>]")
+		fmt.Fprintln(os.Stderr, "usage: ghostty-shader-manager [sync|list|status|on <shader>|off [<shader>]]")
 		os.Exit(1)
 	}
 
