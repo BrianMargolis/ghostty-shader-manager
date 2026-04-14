@@ -28,7 +28,13 @@ type Shader struct {
 }
 
 type Config struct {
-	Shaders []Shader `yaml:"shaders"`
+	Shaders     []Shader `yaml:"shaders"`
+	BlurOpacity float64  `yaml:"blur-opacity"`
+}
+
+type FileState struct {
+	Shaders     map[string]bool
+	BlurEnabled bool
 }
 
 func expandPath(p string) string {
@@ -48,12 +54,15 @@ func loadConfig() (*Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return nil, fmt.Errorf("could not parse config: %w", err)
 	}
+	if cfg.BlurOpacity == 0 {
+		cfg.BlurOpacity = 0.8
+	}
 	return &cfg, nil
 }
 
-// readShadersFile parses the ghostty-shaders file and returns a map of expanded_path -> enabled.
-// Returns nil map (not an error) if the file does not exist.
-func readShadersFile() (map[string]bool, error) {
+// readShadersFile parses the ghostty-shaders file and returns a FileState.
+// Returns nil (not an error) if the file does not exist.
+func readShadersFile() (*FileState, error) {
 	path := expandPath(shadersFile)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -62,7 +71,7 @@ func readShadersFile() (map[string]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	state := make(map[string]bool)
+	state := &FileState{Shaders: make(map[string]bool)}
 	scanner := bufio.NewScanner(strings.NewReader(string(data)))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -75,22 +84,32 @@ func readShadersFile() (map[string]bool, error) {
 			enabled = false
 			content = line[2:]
 		}
-		after, ok := strings.CutPrefix(strings.TrimSpace(content), "custom-shader = ")
+		content = strings.TrimSpace(content)
+		if content == "background-blur = true" {
+			state.BlurEnabled = enabled
+			continue
+		}
+		after, ok := strings.CutPrefix(content, "custom-shader = ")
 		if !ok {
 			continue
 		}
-		state[expandPath(strings.TrimSpace(after))] = enabled
+		state.Shaders[expandPath(strings.TrimSpace(after))] = enabled
 	}
 	return state, nil
 }
 
-func writeShadersFile(shaders []Shader, state map[string]bool) error {
+func writeShadersFile(shaders []Shader, state *FileState, blurOpacity float64) error {
 	var sb strings.Builder
 	sb.WriteString(managedHeader)
 	sb.WriteString("\n\n")
+	if state.BlurEnabled {
+		fmt.Fprintf(&sb, "background-blur = true\n")
+		fmt.Fprintf(&sb, "background-opacity = %.1f\n", blurOpacity)
+		sb.WriteString("\n")
+	}
 	for _, s := range shaders {
 		p := expandPath(s.Path)
-		if state[p] {
+		if state.Shaders[p] {
 			fmt.Fprintf(&sb, "custom-shader = %s\n", s.Path)
 		} else {
 			fmt.Fprintf(&sb, "# custom-shader = %s\n", s.Path)
@@ -114,31 +133,34 @@ func cmdSync() error {
 		return err
 	}
 	if existing == nil {
-		existing = make(map[string]bool)
+		existing = &FileState{Shaders: make(map[string]bool)}
 	}
 
-	newState := make(map[string]bool)
+	newState := &FileState{
+		Shaders:     make(map[string]bool),
+		BlurEnabled: existing.BlurEnabled,
+	}
 	configPaths := make(map[string]bool)
 	added, removed, kept := 0, 0, 0
 
 	for _, s := range cfg.Shaders {
 		p := expandPath(s.Path)
 		configPaths[p] = true
-		if en, found := existing[p]; found {
-			newState[p] = en
+		if en, found := existing.Shaders[p]; found {
+			newState.Shaders[p] = en
 			kept++
 		} else {
-			newState[p] = s.EnabledByDefault
+			newState.Shaders[p] = s.EnabledByDefault
 			added++
 		}
 	}
-	for p := range existing {
+	for p := range existing.Shaders {
 		if !configPaths[p] {
 			removed++
 		}
 	}
 
-	if err := writeShadersFile(cfg.Shaders, newState); err != nil {
+	if err := writeShadersFile(cfg.Shaders, newState, cfg.BlurOpacity); err != nil {
 		return err
 	}
 	fmt.Printf("synced: %d added, %d removed, %d kept\n", added, removed, kept)
@@ -154,6 +176,13 @@ func cmdList() error {
 	if err != nil {
 		return err
 	}
+	if state == nil {
+		fmt.Printf("[unsynced]  blur\n")
+	} else if state.BlurEnabled {
+		fmt.Printf("[on]        blur\n")
+	} else {
+		fmt.Printf("[off]       blur\n")
+	}
 	maxLen := 0
 	for _, s := range cfg.Shaders {
 		if len(s.Name) > maxLen {
@@ -164,7 +193,7 @@ func cmdList() error {
 		var status string
 		if state == nil {
 			status = "[unsynced]"
-		} else if state[expandPath(s.Path)] {
+		} else if state.Shaders[expandPath(s.Path)] {
 			status = "[on]      "
 		} else {
 			status = "[off]     "
@@ -186,9 +215,14 @@ func cmdStatus() error {
 	if state == nil {
 		return fmt.Errorf("ghostty-shaders not found — run `ghostty-shader-manager sync` first")
 	}
+	if state.BlurEnabled {
+		fmt.Printf("[ON]        blur\n")
+	} else {
+		fmt.Printf("[OFF]       blur\n")
+	}
 	for _, s := range cfg.Shaders {
 		p := expandPath(s.Path)
-		en, found := state[p]
+		en, found := state.Shaders[p]
 		switch {
 		case !found:
 			fmt.Printf("[UNSYNCED]  %s\n", s.Name)
@@ -223,9 +257,9 @@ func cmdTurnAllOff() error {
 		return fmt.Errorf("ghostty-shaders not found — run `ghostty-shader-manager sync` first")
 	}
 	for _, s := range cfg.Shaders {
-		state[expandPath(s.Path)] = false
+		state.Shaders[expandPath(s.Path)] = false
 	}
-	if err := writeShadersFile(cfg.Shaders, state); err != nil {
+	if err := writeShadersFile(cfg.Shaders, state, cfg.BlurOpacity); err != nil {
 		return err
 	}
 	fmt.Println("disabled all shaders")
@@ -249,11 +283,11 @@ func cmdToggle(name string, enable bool) error {
 		return fmt.Errorf("ghostty-shaders not found — run `ghostty-shader-manager sync` first")
 	}
 	p := expandPath(shader.Path)
-	if _, found := state[p]; !found {
+	if _, found := state.Shaders[p]; !found {
 		return fmt.Errorf("shader %q not in ghostty-shaders — run `ghostty-shader-manager sync` first", name)
 	}
-	state[p] = enable
-	if err := writeShadersFile(cfg.Shaders, state); err != nil {
+	state.Shaders[p] = enable
+	if err := writeShadersFile(cfg.Shaders, state, cfg.BlurOpacity); err != nil {
 		return err
 	}
 	verb := "disabled"
@@ -286,7 +320,7 @@ func cmdInteractive() error {
 	var items []string
 	for _, s := range cfg.Shaders {
 		prefix := "[off] "
-		if state[expandPath(s.Path)] {
+		if state.Shaders[expandPath(s.Path)] {
 			prefix = "[on]  "
 		}
 		items = append(items, prefix+s.Name)
@@ -316,12 +350,36 @@ func cmdInteractive() error {
 			continue
 		}
 		p := expandPath(shader.Path)
-		state[p] = !state[p]
+		state.Shaders[p] = !state.Shaders[p]
 	}
 
-	if err := writeShadersFile(cfg.Shaders, state); err != nil {
+	if err := writeShadersFile(cfg.Shaders, state, cfg.BlurOpacity); err != nil {
 		return err
 	}
+	return reloadGhostty()
+}
+
+func cmdBlur(enable bool) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+	state, err := readShadersFile()
+	if err != nil {
+		return err
+	}
+	if state == nil {
+		return fmt.Errorf("ghostty-shaders not found — run `ghostty-shader-manager sync` first")
+	}
+	state.BlurEnabled = enable
+	if err := writeShadersFile(cfg.Shaders, state, cfg.BlurOpacity); err != nil {
+		return err
+	}
+	verb := "disabled"
+	if enable {
+		verb = "enabled"
+	}
+	fmt.Printf("blur %s\n", verb)
 	return reloadGhostty()
 }
 
@@ -344,8 +402,12 @@ func main() {
 		err = cmdTurnAllOff()
 	case args[0] == "off" && len(args) == 2:
 		err = cmdToggle(args[1], false)
+	case args[0] == "blur" && len(args) == 2 && args[1] == "on":
+		err = cmdBlur(true)
+	case args[0] == "blur" && len(args) == 2 && args[1] == "off":
+		err = cmdBlur(false)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: ghostty-shader-manager [sync|list|status|on <shader>|off [<shader>]]")
+		fmt.Fprintln(os.Stderr, "usage: ghostty-shader-manager [sync|list|status|on <shader>|off [<shader>]|blur on|blur off]")
 		os.Exit(1)
 	}
 
