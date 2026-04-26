@@ -17,7 +17,7 @@ Ghostty supports a `custom-shader` directive in its config. `ghostty-shader-mana
 ## Installation
 
 ```sh
-go install github.com/brianmargolis/ghostty-shades-manager@latest
+go install github.com/BrianMargolis/ghostty-shader-manager@main
 ```
 
 Or build from source:
