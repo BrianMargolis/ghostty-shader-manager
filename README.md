@@ -37,9 +37,14 @@ shaders:
     enabled-by-default: true
   - path: ~/.config/ghostty/shaders/bloom.glsl
     name: bloom
+  - path: ~/.config/ghostty/shaders/cursor_blaze.glsl
+    name: cursor-blaze
+    animated: true
 ```
 
 Each entry needs a `path` (tilde-expanded) and a `name` used to reference the shader in CLI commands. `enabled-by-default` controls the initial state when `sync` first adds the shader; it has no effect on subsequent syncs. Defaults to `false`.
+
+Set `animated: true` on any shader that changes over time on its own (anything reading `iTime`). The managed file sets `custom-shader-animation = true` only while at least one animated shader is enabled. Otherwise it is `false`, so Ghostty redraws only when the terminal content changes instead of every frame. Don't set `custom-shader-animation` in your main Ghostty config, since the managed file owns it.
 
 Then run `sync` once to initialize the managed file:
 

@@ -25,6 +25,7 @@ type Shader struct {
 	Path             string `yaml:"path"`
 	Name             string `yaml:"name"`
 	EnabledByDefault bool   `yaml:"enabled-by-default"`
+	Animated         bool   `yaml:"animated"`
 }
 
 type Config struct {
@@ -107,14 +108,21 @@ func writeShadersFile(shaders []Shader, state *FileState, blurOpacity float64) e
 		fmt.Fprintf(&sb, "background-opacity = %.1f\n", blurOpacity)
 		sb.WriteString("\n")
 	}
+	animate := false
 	for _, s := range shaders {
 		p := expandPath(s.Path)
 		if state.Shaders[p] {
 			fmt.Fprintf(&sb, "custom-shader = %s\n", s.Path)
+			animate = animate || s.Animated
 		} else {
 			fmt.Fprintf(&sb, "# custom-shader = %s\n", s.Path)
 		}
 	}
+	// Animation redraws every frame even when the terminal is idle, which makes
+	// multi-sample shaders like bloom expensive. Static shaders only need a
+	// redraw when the terminal content changes, so leave it off unless an
+	// enabled shader reads iTime.
+	fmt.Fprintf(&sb, "\ncustom-shader-animation = %t\n", animate)
 	dest := expandPath(shadersFile)
 	tmp := dest + ".tmp"
 	if err := os.WriteFile(tmp, []byte(sb.String()), 0644); err != nil {
